@@ -154,3 +154,12 @@ class Tags:
         unique_tags = self._get_unique_tags()
         top_tags = [tag for tag in unique_tags if word.lower() in tag.lower()]
         return sorted(top_tags)
+    
+
+    def unique_tags_count(self):
+        """
+        Returns the number of tags that appear only once in the dataset.
+        """
+        counter = Counter(self._get_tags())
+        unique_count = sum(1 for count in counter.values() if count == 1)
+        return unique_count

@@ -3,51 +3,71 @@ from bs4 import BeautifulSoup
 import re
 from collections import Counter
 
+from movielens_impl.movies import Movies
+
 
 class Links:
     """
     Analyzing data from links.csv
     """
 
-    def __init__(self, path_to_the_file='./data/links.csv'):
-        self.links = {}
-        self._load_links(path_to_the_file)
+    def __init__(self, movies = Movies(), path_to_the_file='./data/links.csv'):
+        self.movies = movies
+        self.links = self._load_links(path_to_the_file)
         self.imdb_info = []
 
     def _load_links(self, path_to_the_file):
-        with open(path_to_the_file, "r", encoding="utf-8") as file:
-            header_line = file.readline()
+        result = {}
+        try:
+            with open(path_to_the_file, "r", encoding="utf-8") as file:
+                header_line = file.readline()
 
-            if not header_line:
-                raise ValueError("CSV is empty or missing header")
+                if not header_line or header_line != 'movieId,imdbId,tmdbId\n':
+                    raise ValueError("CSV is empty or missing header")
 
-            for i, line in enumerate(file):
-                if i == 1000:
-                    break
-                movieId, _, tmdbId = line.strip().split(",")
-                if not tmdbId:
-                    continue
+                for line in file:
+                    movieId, _, tmdbId = line.strip().split(",")
+                    movieId = int(movieId)
+                    title = self.movies.get_name(movieId)
+                    if not tmdbId or title is None:
+                        continue
 
-                self.links[int(movieId)] = int(tmdbId)
+                    result[movieId] = {
+                        "tmdbId": int(tmdbId),
+                        "title": title
+                    }
+        except (FileNotFoundError, PermissionError) as e:
+            print(f'file access error {path_to_the_file}: {e}')
+            return {}
+        return result
+    
 
     def get_imdb(self, list_of_movies, list_of_fields):
         self.imdb_info = []
         self.last_fields = list(list_of_fields)
         for movieId in list_of_movies:
-            tmdbId = self.links.get(movieId)
+            movie = self.links.get(movieId)
+
+            if movie is None:
+                continue
+
+            tmdbId = movie["tmdbId"]
+            title = movie["title"]
+
             if not tmdbId:
                 continue
 
             url = f"https://www.themoviedb.org/movie/{tmdbId}"
 
             try:
-                response = requests.get(url, timeout=10)
+                response = requests.get(
+                    url, timeout=10)
                 response.raise_for_status()
                 soup = BeautifulSoup(response.text, "html.parser")
 
-                title_block = soup.find("div", class_="title")
-                title_tag = title_block.find("a") if title_block else None
-                title = title_tag.get_text(strip=True) if title_tag else None
+                # title_block = soup.find("div", class_="title")
+                # title_tag = title_block.find("a") if title_block else None
+                # title = title_tag.get_text(strip=True) if title_tag else None
 
                 budget_tag = soup.find("bdi", string="Budget")
                 budget = None
@@ -246,23 +266,10 @@ class Links:
 
         return longest_movies_by_director
 
+    def select_movies(self, start_id, end_id):
+        if start_id > end_id:
+            raise ValueError("start_id must be less than or equal to end_id")
 
-if __name__ == "__main__":
-    links = Links()
-    print(len(links.links))
-    print(list(links.links.items())[:5])
-    print('result of get_imdb')
-    print(links.get_imdb([1, 2, 3, 4, 5, 6, 7, 12, 345, 567, 234, 887, 453, 895, 434, 456, 566], ["Title", "Runtime",
-          "Budget", "Cumulative Worldwide Gross", "Director"]))
-    print('result of top_directors')
-    print(links.top_directors(3))
-    print('result of most_expensive')
-    print(links.most_expensive(20))
-    print('result of most_profitable')
-    print(links.most_profitable(20))
-    print('result of longest')
-    print(links.longest(20))
-    print('result of top_cost_per_minute')
-    print(links.top_cost_per_minute(20))
-    print('result of longest_by_director')
-    print(links.longest_by_director())
+        selected_movies = [
+            movie for movie in self.links.keys() if start_id <= movie <= end_id]
+        return selected_movies

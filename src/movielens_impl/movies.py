@@ -1,4 +1,3 @@
-from email import header
 import re
 from collections import Counter
 
@@ -13,21 +12,25 @@ class Movies:
 
 
     def _load_movies(self, path_to_the_file='./data/movies.csv'):
-        pattern = r'(\d+),(?:"([^"]+)"|([^,]+)),(.+)'
-        with open(path_to_the_file, "r", encoding="utf-8") as file:
-            header = file.readline()
+        try:
+            pattern = r'(\d+),(?:"([^"]+)"|([^,]+)),(.+)'
+            with open(path_to_the_file, "r", encoding="utf-8") as file:
+                header = file.readline()
 
-            if not header:
-                raise ValueError("CSV is empty or missing header")
-            result = {}
-            for line in file:
-                match = re.match(pattern, line.strip())
-                if match:
-                    movieId = int(match.group(1))
-                    title = match.group(2) if match.group(2) else match.group(3)
-                    genres = match.group(4)
-                    result[movieId] = (title, genres.split("|"))
-        return result
+                if not header or header != 'movieId,title,genres\n':
+                    raise ValueError("CSV is empty or missing header")
+                result = {}
+                for line in file:
+                    match = re.match(pattern, line.strip())
+                    if match:
+                        movieId = int(match.group(1))
+                        title = match.group(2) if match.group(2) else match.group(3)
+                        genres = match.group(4)
+                        result[movieId] = (title, genres.split("|"))
+            return result
+        except (FileNotFoundError, PermissionError) as e:
+            print(f'file access error {path_to_the_file}: {e}')
+            return {}
 
 
     def dist_by_release(self):

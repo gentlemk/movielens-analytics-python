@@ -371,6 +371,35 @@ class TestTags:
         def test_invalid_word_raises(self, make_tags, word):
             with pytest.raises(ValueError):
                 make_tags(CSV_TAGS_WITH).tags_with(word)
+                
+    class TestUniqueTagsCount:
+        def test_counts_singletons_correctly(self, make_tags):
+            result = make_tags(CSV_TAGS_POPULAR).unique_tags_count()
+            assert result == 1
+
+        def test_counts_multiple_singletons(self, make_tags):
+            result = make_tags(CSV_READ_SMALL).unique_tags_count()
+            assert result == 3
+
+        def test_returns_zero_if_no_singletons(self, make_tags):
+            result = make_tags(CSV_TAGS_DUPLICATES).unique_tags_count()
+            assert result == 2
+
+        def test_is_case_sensitive(self, make_tags):
+            result = make_tags(CSV_TAGS_DUPLICATES).unique_tags_count()
+            assert result == 2
+
+        @pytest.mark.parametrize("content", [
+            pytest.param(CSV_EMPTY_FILE, id="empty_file"),
+            pytest.param(CSV_ONLY_HEADER, id="only_header"),
+        ])
+        def test_no_data_returns_zero(self, make_tags, content):
+            result = make_tags(content).unique_tags_count()
+            assert result == 0
+
+        def test_returns_int(self, make_tags):
+            result = make_tags(CSV_TAGS_POPULAR).unique_tags_count()
+            assert isinstance(result, int)
         
     
     

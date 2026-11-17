@@ -212,7 +212,6 @@ class Ratings:
             for title, ratings in ratings_by_movie.items():
                 count_ratings = len(ratings)
                 
-                # пропускаем фильмы с малым количеством оценок
                 if count_ratings < min_count_ratings:
                     continue
                 if metric == 'average':

@@ -1,9 +1,25 @@
+from movielens_impl import links
 from movielens_impl.links import Links
+from movielens_impl.movies import Movies
 import pytest
 import requests
 
 
-def test_load_links(tmp_path):
+@pytest.fixture
+def movies(tmp_path):
+    file_path = tmp_path / "movies.csv"
+    file_path.write_text(
+        "movieId,title,genres\n"
+        '1,"Toy Story (1995)",Adventure|Animation\n'
+        '2,"Jumanji (1995)",Adventure|Children\n'
+        '3,"Grumpier Old Men (1995)",Comedy|Romance\n',
+        encoding="utf-8"
+    )
+
+    return Movies(str(file_path))
+
+
+def test_load_links(tmp_path, movies):
     file_path = tmp_path / "links.csv"
     file_path.write_text(
         "movieId,imdbId,tmdbId\n"
@@ -13,45 +29,51 @@ def test_load_links(tmp_path):
         encoding="utf-8"
     )
 
-    links = Links(str(file_path))
+    links = Links(movies, str(file_path))
 
     assert links.links == {
-        1: 862,
-        3: 15602
+        1: {
+            "tmdbId": 862,
+            "title": "Toy Story (1995)"
+        },
+        3: {
+            "tmdbId": 15602,
+            "title": "Grumpier Old Men (1995)"
+        }
     }
 
 
-def test_load_links_header_only(tmp_path):
+def test_load_links_header_only(tmp_path, movies):
     file_path = tmp_path / "links.csv"
     file_path.write_text(
         "movieId,imdbId,tmdbId\n",
         encoding="utf-8"
     )
 
-    links = Links(str(file_path))
+    links = Links(movies, str(file_path))
 
     assert links.links == {}
 
 
-def test_load_links_empty_file(tmp_path):
-    file_path = tmp_path / "links.csv"
-    file_path.write_text("", encoding="utf-8")
-
-    with pytest.raises(StopIteration):
-        Links(str(file_path))
-
-
-def test_load_links_empty_file(tmp_path):
+def test_load_links_empty_file(tmp_path, movies):
     file_path = tmp_path / "empty_links.csv"
     file_path.write_text("", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="CSV is empty or missing header"):
-        Links(str(file_path))
+    with pytest.raises(
+        ValueError,
+        match="CSV is empty or missing header"
+    ):
+        Links(movies, str(file_path))
 
 
-def test_get_imdb_success(monkeypatch):
-    links = Links()
-    links.links = {1: 862}
+def test_get_imdb_success(monkeypatch, movies):
+    links = Links(movies)
+    links.links = {
+        1: {
+            "tmdbId": 862,
+            "title": "Toy Story (1995)"
+        }
+    }
 
     html = """
     <section class="header poster">
@@ -106,14 +128,19 @@ def test_get_imdb_success(monkeypatch):
     )
 
     assert result == [
-        [1, "Toy Story", "John Lasseter", "Budget $30,000,000",
+        [1, "Toy Story (1995)", "John Lasseter", "Budget $30,000,000",
          "Revenue $401,157,969", "1h 21m"]
     ]
 
 
-def test_get_imdb_request_error(monkeypatch):
-    links = Links()
-    links.links = {1: 862}
+def test_get_imdb_request_error(monkeypatch, movies):
+    links = Links(movies)
+    links.links = {
+        1: {
+            "tmdbId": 862,
+            "title": "Toy Story (1995)"
+        }
+    }
 
     def mock_get(url, timeout):
         raise requests.RequestException("Connection error")
@@ -125,9 +152,14 @@ def test_get_imdb_request_error(monkeypatch):
     assert result == []
 
 
-def test_get_imdb_missing_fields(monkeypatch):
-    links = Links()
-    links.links = {1: 862}
+def test_get_imdb_missing_fields(monkeypatch, movies):
+    links = Links(movies)
+    links.links = {
+        1: {
+            "tmdbId": 862,
+            "title": "Toy Story (1995)"
+        }
+    }
 
     html = """
     <div class="title">
@@ -153,12 +185,17 @@ def test_get_imdb_missing_fields(monkeypatch):
          "Cumulative Worldwide Gross", "Runtime"]
     )
 
-    assert result == [[1, "Toy Story", None, None, None, "1h 21m"]]
+    assert result == [
+        [1, "Toy Story (1995)", None, None, None, "1h 21m"]
+    ]
 
 
-def test_get_imdb_sorting(monkeypatch):
-    links = Links()
-    links.links = {1: 862, 2: 8844}
+def test_get_imdb_sorting(monkeypatch, movies):
+    links = Links(movies)
+    links.links = {
+        1: {"tmdbId": 862, "title": "Toy Story (1995)"},
+        2: {"tmdbId": 8844, "title": "Jumanji (1995)"}
+    }
 
     html_by_id = {
         862: '<div class="title"><a>Toy Story</a></div>',
@@ -181,13 +218,13 @@ def test_get_imdb_sorting(monkeypatch):
     result = links.get_imdb([1, 2], ["Title"])
 
     assert result == [
-        [2, "Jumanji"],
-        [1, "Toy Story"]
+        [2, "Jumanji (1995)"],
+        [1, "Toy Story (1995)"]
     ]
 
 
-def test_top_directors():
-    links = Links()
+def test_top_directors(movies):
+    links = Links(movies)
     links.last_fields = ["Title", "Director"]
     links.imdb_info = [
         [1, "Toy Story", "John Lasseter"],
@@ -205,8 +242,8 @@ def test_top_directors():
     }
 
 
-def test_top_directors_skip_missing():
-    links = Links()
+def test_top_directors_skip_missing(movies):
+    links = Links(movies)
     links.last_fields = ["Title", "Director"]
     links.imdb_info = [
         [1, "Toy Story", "John Lasseter"],
@@ -223,8 +260,8 @@ def test_top_directors_skip_missing():
     }
 
 
-def test_top_directors_more_than_available():
-    links = Links()
+def test_top_directors_more_than_available(movies):
+    links = Links(movies)
     links.last_fields = ["Title", "Director"]
     links.imdb_info = [
         [1, "Toy Story", "John Lasseter"],
@@ -239,8 +276,8 @@ def test_top_directors_more_than_available():
     }
 
 
-def test_top_directors_negative_n():
-    links = Links()
+def test_top_directors_negative_n(movies):
+    links = Links(movies)
     links.last_fields = ["Title", "Director"]
     links.imdb_info = [[1, "Toy Story", "John Lasseter"]]
 
@@ -248,8 +285,8 @@ def test_top_directors_negative_n():
         links.top_directors(-1)
 
 
-def test_most_expensive():
-    links = Links()
+def test_most_expensive(movies):
+    links = Links(movies)
     links.last_fields = ["Title", "Budget"]
     links.imdb_info = [
         [1, "Toy Story", "$30,000,000"],
@@ -266,8 +303,8 @@ def test_most_expensive():
     }
 
 
-def test_most_expensive_skip_missing():
-    links = Links()
+def test_most_expensive_skip_missing(movies):
+    links = Links(movies)
     links.last_fields = ["Title", "Budget"]
     links.imdb_info = [
         [1, "Toy Story", "$30,000,000"],
@@ -284,8 +321,8 @@ def test_most_expensive_skip_missing():
     }
 
 
-def test_most_expensive_negative_n():
-    links = Links()
+def test_most_expensive_negative_n(movies):
+    links = Links(movies)
     links.last_fields = ["Title", "Budget"]
     links.imdb_info = [[1, "Toy Story", "$30,000,000"]]
 
@@ -293,8 +330,8 @@ def test_most_expensive_negative_n():
         links.most_expensive(-1)
 
 
-def test_most_profitable():
-    links = Links()
+def test_most_profitable(movies):
+    links = Links(movies)
     links.last_fields = [
         "Title", "Budget", "Cumulative Worldwide Gross"
     ]
@@ -313,8 +350,8 @@ def test_most_profitable():
     }
 
 
-def test_most_profitable_skip_missing():
-    links = Links()
+def test_most_profitable_skip_missing(movies):
+    links = Links(movies)
     links.last_fields = [
         "Title", "Budget", "Cumulative Worldwide Gross"
     ]
@@ -332,8 +369,8 @@ def test_most_profitable_skip_missing():
     }
 
 
-def test_most_profitable_more_than_available():
-    links = Links()
+def test_most_profitable_more_than_available(movies):
+    links = Links(movies)
     links.last_fields = [
         "Title", "Budget", "Cumulative Worldwide Gross"
     ]
@@ -350,8 +387,8 @@ def test_most_profitable_more_than_available():
     }
 
 
-def test_most_profitable_negative_n():
-    links = Links()
+def test_most_profitable_negative_n(movies):
+    links = Links(movies)
     links.last_fields = [
         "Title", "Budget", "Cumulative Worldwide Gross"
     ]
@@ -363,8 +400,8 @@ def test_most_profitable_negative_n():
         links.most_profitable(-1)
 
 
-def test_longest():
-    links = Links()
+def test_longest(movies):
+    links = Links(movies)
     links.last_fields = ["Title", "Runtime"]
     links.imdb_info = [
         [1, "Toy Story", "1h 21m"],
@@ -381,8 +418,8 @@ def test_longest():
     }
 
 
-def test_longest_skip_missing():
-    links = Links()
+def test_longest_skip_missing(movies):
+    links = Links(movies)
     links.last_fields = ["Title", "Runtime"]
     links.imdb_info = [
         [1, "Toy Story", "1h 21m"],
@@ -398,8 +435,8 @@ def test_longest_skip_missing():
     }
 
 
-def test_longest_more_than_available():
-    links = Links()
+def test_longest_more_than_available(movies):
+    links = Links(movies)
     links.last_fields = ["Title", "Runtime"]
     links.imdb_info = [
         [1, "Toy Story", "1h 21m"],
@@ -414,8 +451,8 @@ def test_longest_more_than_available():
     }
 
 
-def test_longest_negative_n():
-    links = Links()
+def test_longest_negative_n(movies):
+    links = Links(movies)
     links.last_fields = ["Title", "Runtime"]
     links.imdb_info = [
         [1, "Toy Story", "1h 21m"]
@@ -425,8 +462,8 @@ def test_longest_negative_n():
         links.longest(-1)
 
 
-def test_top_cost_per_minute():
-    links = Links()
+def test_top_cost_per_minute(movies):
+    links = Links(movies)
     links.last_fields = ["Title", "Budget", "Runtime"]
     links.imdb_info = [
         [1, "Toy Story", "$30,000,000", "1h 30m"],
@@ -443,8 +480,8 @@ def test_top_cost_per_minute():
     }
 
 
-def test_top_cost_per_minute_skip_missing():
-    links = Links()
+def test_top_cost_per_minute_skip_missing(movies):
+    links = Links(movies)
     links.last_fields = ["Title", "Budget", "Runtime"]
     links.imdb_info = [
         [1, "Toy Story", "$30,000,000", "1h 30m"],
@@ -461,8 +498,8 @@ def test_top_cost_per_minute_skip_missing():
     }
 
 
-def test_top_cost_per_minute_negative_n():
-    links = Links()
+def test_top_cost_per_minute_negative_n(movies):
+    links = Links(movies)
     links.last_fields = ["Title", "Budget", "Runtime"]
     links.imdb_info = [
         [1, "Toy Story", "$30,000,000", "1h 30m"]
@@ -472,8 +509,8 @@ def test_top_cost_per_minute_negative_n():
         links.top_cost_per_minute(-1)
 
 
-def test_top_cost_per_minute_zero_runtime():
-    links = Links()
+def test_top_cost_per_minute_zero_runtime(movies):
+    links = Links(movies)
     links.last_fields = ["Title", "Budget", "Runtime"]
     links.imdb_info = [
         [1, "Toy Story", "$30,000,000", "0h 0m"],
@@ -487,8 +524,8 @@ def test_top_cost_per_minute_zero_runtime():
     }
 
 
-def test_longest_by_director():
-    links = Links()
+def test_longest_by_director(movies):
+    links = Links(movies)
     links.last_fields = ["Title", "Director", "Runtime"]
     links.imdb_info = [
         [1, "Toy Story", "John Lasseter", "1h 30m"],
@@ -507,8 +544,8 @@ def test_longest_by_director():
     }
 
 
-def test_longest_by_director_skip_missing():
-    links = Links()
+def test_longest_by_director_skip_missing(movies):
+    links = Links(movies)
     links.last_fields = ["Title", "Director", "Runtime"]
     links.imdb_info = [
         [1, "Toy Story", "John Lasseter", "1h 30m"],
@@ -526,9 +563,14 @@ def test_longest_by_director_skip_missing():
     }
 
 
-def test_get_imdb_types(monkeypatch):
-    links = Links()
-    links.links = {1: 862}
+def test_get_imdb_types(monkeypatch, movies):
+    links = Links(movies)
+    links.links = {
+        1: {
+            "tmdbId": 862,
+            "title": "Toy Story (1995)"
+        }
+    }
 
     html = """
     <div class="title"><a>Toy Story</a></div>
@@ -571,8 +613,8 @@ def test_get_imdb_types(monkeypatch):
         )
 
 
-def test_analytical_methods_types():
-    links = Links()
+def test_analytical_methods_types(movies):
+    links = Links(movies)
 
     links.last_fields = [
         "Title", "Director", "Budget",
@@ -604,3 +646,58 @@ def test_analytical_methods_types():
         assert all(isinstance(key, str) for key in result)
         assert all(isinstance(value, value_type)
                    for value in result.values())
+
+
+def test_select_movies(movies):
+    links = Links(movies)
+    links.links = {
+        1: 862,
+        5: 15602,
+        10: 949,
+        15: 710,
+        20: 123
+    }
+
+    result = links.select_movies(5, 15)
+
+    assert result == [5, 10, 15]
+
+
+def test_select_movies_includes_boundaries(movies):
+    links = Links(movies)
+    links.links = {
+        10: 862,
+        20: 15602,
+        30: 949
+    }
+
+    result = links.select_movies(10, 30)
+
+    assert result == [10, 20, 30]
+
+
+def test_select_movies_empty_result(movies):
+    links = Links(movies)
+    links.links = {
+        1: 862,
+        2: 15602,
+        3: 949
+    }
+
+    result = links.select_movies(10, 20)
+
+    assert result == []
+
+
+def test_select_movies_invalid_range(movies):
+    links = Links(movies)
+    links.links = {
+        1: 862,
+        5: 15602
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="start_id must be less than or equal to end_id"
+    ):
+        links.select_movies(10, 5)
